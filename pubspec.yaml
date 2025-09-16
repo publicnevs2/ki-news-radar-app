@@ -1,0 +1,31 @@
+name: ki_news_radar_app
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Unsere hinzugefügten Pakete
+  flutter_riverpod: ^2.5.1
+  http: ^1.2.1
+  google_fonts: ^6.2.1
+  url_launcher: ^6.3.0
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Unser hinzugefügter Assets-Ordner
+  assets:
+    - assets/
