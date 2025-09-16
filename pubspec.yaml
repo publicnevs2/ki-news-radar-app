@@ -10,12 +10,18 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Unsere hinzugefügten Pakete
   flutter_riverpod: ^2.5.1
   http: ^1.2.1
   google_fonts: ^6.2.1
   url_launcher: ^6.3.0
-  cupertino_icons: ^1.0.8
+  flutter_staggered_animations: ^1.1.1
+  share_plus: ^9.0.0
+  fl_chart: ^0.68.0
+  
+  # NEUE PAKETE
+  just_audio: ^0.9.39
+  audio_service: ^0.18.13
+  intl: ^0.19.0 # Für die Datumsformatierung
 
 dev_dependencies:
   flutter_test:
@@ -25,7 +31,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
-  # Unser hinzugefügter Assets-Ordner
   assets:
     - assets/
+
