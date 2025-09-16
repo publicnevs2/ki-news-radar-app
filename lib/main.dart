@@ -10,7 +10,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:intl/intl.dart';
-import 'audio_handler.dart'; // Importiere unsere neue Audio-Handler Datei
+import 'package:intl/date_symbol_data_local.dart'; // KORREKTUR: Fehlender Import
+import 'audio_handler.dart'; 
 
 // --- Datenmodell ---
 class NewsArticle {
@@ -21,7 +22,7 @@ class NewsArticle {
   final String type;
   final List<String> topics;
   final String audioUrl;
-  final DateTime published; // NEU: Datum als DateTime-Objekt
+  final DateTime published;
 
   NewsArticle({
     required this.source,
@@ -51,7 +52,6 @@ class NewsArticle {
 // --- Provider ---
 final newsProvider = FutureProvider<List<NewsArticle>>((ref) async {
   final url = Uri.parse('https://raw.githubusercontent.com/publicnevs2/ki-news-radar/main/data.json');
-  // Verhindere Caching, um immer die neuesten Daten zu bekommen
   final headers = {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'};
   final response = await http.get(url, headers: headers);
 
@@ -93,7 +93,7 @@ final filteredNewsProvider = Provider<List<NewsArticle>>((ref) {
 });
 
 final topicFrequencyProvider = Provider<Map<String, int>>((ref) {
-  final news = ref.watch(newsProvider).asData?.value ?? [];
+  final news = ref.watch(filteredNewsProvider);
   final topicCounts = <String, int>{};
   for (var article in news) {
     for (var topic in article.topics) {
@@ -105,12 +105,10 @@ final topicFrequencyProvider = Provider<Map<String, int>>((ref) {
   return topicCounts;
 });
 
-// Provider, der den Wiedergabestatus des Players überwacht
 final playbackStateProvider = StreamProvider<PlaybackState>((ref) {
   return audioHandler.playbackState;
 });
 
-// Provider, der das aktuell spielende Medium überwacht
 final currentMediaItemProvider = StreamProvider<MediaItem?>((ref) {
   return audioHandler.mediaItem;
 });
@@ -118,9 +116,9 @@ final currentMediaItemProvider = StreamProvider<MediaItem?>((ref) {
 
 // --- Haupt-App ---
 Future<void> main() async {
-  // Wichtig: Initialisiere zuerst den Audio Handler
   WidgetsFlutterBinding.ensureInitialized();
   await initAudioHandler();
+  await initializeDateFormatting('de_DE', null);
   runApp(const ProviderScope(child: MyApp()));
 }
 
@@ -133,7 +131,7 @@ class MyApp extends StatelessWidget {
       title: 'KI-News-Radar',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        brightness: Bright.dark,
+        brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF121212),
         primaryColor: Colors.blue.shade300,
         colorScheme: const ColorScheme.dark(
@@ -198,7 +196,6 @@ class _MainScreenState extends ConsumerState<MainScreen> {
               children: pages,
             ),
           ),
-          // Hier wird der Mini-Player angezeigt, wenn etwas spielt
           const MiniPlayer(),
         ],
       ),
@@ -256,7 +253,8 @@ class NewsFeedPage extends ConsumerWidget {
                 backgroundColor: Theme.of(context).colorScheme.surface,
                 foregroundColor: Colors.white70,
                 selectedForegroundColor: Theme.of(context).colorScheme.primary,
-                selectedBackgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                // KORREKTUR: Veraltete Funktion ersetzt
+                selectedBackgroundColor: Theme.of(context).colorScheme.primary.withAlpha(51),
               ),
             ),
           ),
@@ -311,85 +309,97 @@ class RadarPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final topicCounts = ref.watch(topicFrequencyProvider);
-    final sortedTopics = topicCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    final topTopics = sortedTopics.take(7).toList();
-    if (topTopics.isEmpty) return const Center(child: Text("Lade Themendaten..."));
+    final newsAsyncValue = ref.watch(newsProvider);
 
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("Top-Themen", style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          const Text("Tippe auf einen Balken, um die News zu filtern.", style: TextStyle(color: Colors.white70)),
-          const SizedBox(height: 32),
-          Expanded(
-            child: BarChart(
-              BarChartData(
-                alignment: BarChartAlignment.spaceAround,
-                maxY: (topTopics.first.value.toDouble()) * 1.2,
-                barTouchData: BarTouchData(
-                  touchTooltipData: BarTouchTooltipData(
-                    getTooltipColor: (group) => Colors.grey[800],
-                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                       return BarTooltipItem(
-                         '${topTopics[group.x.toInt()].key}\n',
-                         const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                         children: <TextSpan>[
-                           TextSpan(
-                             text: rod.toY.toInt().toString(),
-                             style: TextStyle(
-                               color: Theme.of(context).colorScheme.secondary,
-                               fontWeight: FontWeight.w500,
-                             ),
-                           ),
-                           const TextSpan(text: ' Erwähnungen', style: TextStyle(color: Colors.white)),
-                         ],
-                       );
-                    },
-                  ),
-                  touchCallback: (event, response) {
-                    if (response != null && response.spot != null && event is FlTapUpEvent) {
-                       final index = response.spot!.touchedBarGroupIndex;
-                       onTopicSelected(topTopics[index].key);
-                    }
-                  }
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (value, meta) {
-                        final index = value.toInt();
-                        if (index < topTopics.length) {
-                          return Padding(padding: const EdgeInsets.only(top: 6.0), child: Text(topTopics[index].key, style: const TextStyle(fontSize: 10), overflow: TextOverflow.ellipsis));
+    return newsAsyncValue.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, stack) => const Center(child: Text('Fehler beim Laden der Themendaten')),
+      data: (articles) {
+        final topicCounts = ref.watch(topicFrequencyProvider);
+        if (topicCounts.isEmpty) {
+          return const Center(child: Text("Keine Themen zum Anzeigen gefunden."));
+        }
+        
+        final sortedTopics = topicCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+        final topTopics = sortedTopics.take(7).toList();
+
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Top-Themen", style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              const Text("Tippe auf einen Balken, um die News zu filtern.", style: TextStyle(color: Colors.white70)),
+              const SizedBox(height: 32),
+              Expanded(
+                child: BarChart(
+                  BarChartData(
+                    alignment: BarChartAlignment.spaceAround,
+                    maxY: (topTopics.first.value.toDouble()) * 1.2,
+                    barTouchData: BarTouchData(
+                      touchTooltipData: BarTouchTooltipData(
+                        // KORREKTUR: Veralteter Parameter ersetzt
+                        getTooltipColor: (group) => Colors.grey[800] ?? Colors.grey,
+                        getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                           return BarTooltipItem(
+                             '${topTopics[group.x.toInt()].key}\n',
+                             const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                             children: <TextSpan>[
+                               TextSpan(
+                                 text: rod.toY.toInt().toString(),
+                                 style: TextStyle(
+                                   color: Theme.of(context).colorScheme.secondary,
+                                   fontWeight: FontWeight.w500,
+                                 ),
+                               ),
+                               const TextSpan(text: ' Erwähnungen', style: TextStyle(color: Colors.white)),
+                             ],
+                           );
+                        },
+                      ),
+                      touchCallback: (event, response) {
+                        if (response != null && response.spot != null && event is FlTapUpEvent) {
+                           final index = response.spot!.touchedBarGroupIndex;
+                           onTopicSelected(topTopics[index].key);
                         }
-                        return const Text('');
-                      }, reservedSize: 38)),
-                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      }
+                    ),
+                    titlesData: FlTitlesData(
+                      show: true,
+                      bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (value, meta) {
+                            final index = value.toInt();
+                            if (index < topTopics.length) {
+                              return Padding(padding: const EdgeInsets.only(top: 6.0), child: Text(topTopics[index].key, style: const TextStyle(fontSize: 10), overflow: TextOverflow.ellipsis));
+                            }
+                            return const Text('');
+                          }, reservedSize: 38)),
+                      leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    ),
+                    borderData: FlBorderData(show: false),
+                    gridData: const FlGridData(show: false),
+                    barGroups: topTopics.asMap().entries.map((entry) {
+                       return BarChartGroupData(x: entry.key, barRods: [
+                            BarChartRodData(
+                              toY: entry.value.value.toDouble(), 
+                              color: Theme.of(context).colorScheme.primary, 
+                              width: 22, 
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(6),
+                                topRight: Radius.circular(6),
+                              ),
+                            )
+                          ]);
+                    }).toList(),
+                  ),
                 ),
-                borderData: FlBorderData(show: false),
-                gridData: const FlGridData(show: false),
-                barGroups: topTopics.asMap().entries.map((entry) {
-                   return BarChartGroupData(x: entry.key, barRods: [
-                        BarChartRodData(
-                          toY: entry.value.value.toDouble(), 
-                          color: Theme.of(context).colorScheme.primary, 
-                          width: 22, 
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(6),
-                            topRight: Radius.circular(6),
-                          ),
-                        )
-                      ]);
-                }).toList(),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      }
     );
   }
 }
@@ -458,12 +468,11 @@ class NewsCard extends ConsumerWidget {
                 IconButton(icon: const Icon(Icons.share, size: 20, color: Colors.grey), onPressed: () => Share.share('KI-News-Radar: ${article.title}\n${article.link}')),
               ],
             ),
-            // NEU: Datumsanzeige
             Padding(
               padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
               child: Text(
                 DateFormat('dd. MMMM yyyy', 'de_DE').format(article.published),
-                style: TextStyle(color: Colors.grey, fontSize: 12),
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
               ),
             ),
             Text(article.title, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
