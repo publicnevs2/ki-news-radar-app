@@ -1,29 +1,23 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
-// Globale Instanz des Audio Handlers
 late AudioHandler audioHandler;
 
-/// Initialisiert den AudioService und verbindet ihn mit unserem AudioPlayerHandler.
 Future<void> initAudioHandler() async {
   audioHandler = await AudioService.init(
     builder: () => AudioPlayerHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'de.sven.ki_news_radar.audio',
+      androidNotificationChannelId: 'com.mycompany.myapp.channel.audio',
       androidNotificationChannelName: 'KI-News-Radar Wiedergabe',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
     ),
   );
 }
 
-/// Diese Klasse verwaltet die eigentliche Audio-Logik.
-class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
+class AudioPlayerHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
 
   AudioPlayerHandler() {
-    // Leite die Player-Status-Änderungen an den AudioService weiter,
-    // damit die UI und die Systembenachrichtigung aktualisiert werden.
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
   }
 
@@ -43,30 +37,28 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<void> playMediaItem(MediaItem mediaItem) async {
-    // Speichere das aktuelle Item, damit die UI es anzeigen kann.
-    this.mediaItem.add(mediaItem);
+  Future<void> playMediaItem(MediaItem item) async {
+    mediaItem.add(item);
     try {
-      await _player.setUrl(mediaItem.id); // Die URL ist die ID
+      await _player.setUrl(item.id);
       play();
     } catch (e) {
-      print("Error loading audio source: $e");
+      // Fehler still behandeln, da dies kein kritischer Fehler ist.
     }
   }
 
-  /// Transformiert die Events von `just_audio` in ein Standardformat für `audio_service`.
   PlaybackState _transformEvent(PlaybackEvent event) {
     return PlaybackState(
       controls: [
         MediaControl.pause,
-        MediaControl.play,
         MediaControl.stop,
       ],
       systemActions: const {
         MediaAction.seek,
-        MediaAction.playPause,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
       },
-      androidCompactActionIndices: const [0, 1],
+      androidCompactActionIndices: const [0],
       processingState: const {
         ProcessingState.idle: AudioProcessingState.idle,
         ProcessingState.loading: AudioProcessingState.loading,
