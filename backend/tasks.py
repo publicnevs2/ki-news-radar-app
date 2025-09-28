@@ -1,5 +1,3 @@
-# backend/tasks.py (Final, Corrected API Calls)
-
 import os
 import json
 import feedparser
@@ -15,14 +13,19 @@ from dotenv import load_dotenv
 from .database import get_db_connection
 
 # --- GOOGLE GEN AI SDK ---
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+from google.generativeai.types import GenerationConfig
 
 # --- CONFIGURATION ---
 load_dotenv()
 
-# Korrekte Initialisierung des Clients
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# KORREKTE INITIALISIERUNG: Konfiguriert die Bibliothek einmalig.
+try:
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    print("✅ Google GenAI SDK erfolgreich konfiguriert.")
+except Exception as e:
+    print(f"❌ FEHLER bei der Konfiguration des Google GenAI SDK: {e}")
+
 
 MODEL_JSON_NAME = "gemini-1.5-flash-latest"
 MODEL_SUMMARY_NAME = "gemini-1.5-pro-latest"
@@ -153,6 +156,9 @@ def process_with_gemini(entries):
     if not entries: return []
     print(f"\nStarte die Verarbeitung von {len(entries)} neuen Einträgen mit Gemini (Batchgröße {BATCH_SIZE})...")
     
+    # KORREKTE NUTZUNG: Erstelle ein Modell-Objekt für diese Aufgabe
+    model = genai.GenerativeModel(MODEL_JSON_NAME)
+
     enriched = [dict(e, id=f"item_{i}") for i, e in enumerate(entries)]
     processed_by_id = {}
 
@@ -162,20 +168,15 @@ def process_with_gemini(entries):
         
         for attempt in range(MAX_RETRIES):
             try:
-                # --- KORRIGIERTER API-AUFRUF ---
-                # Direkter Aufruf mit client.generate_content und Erzwingen von JSON-Output
-                response = client.generate_content(
-                    model=f"models/{MODEL_JSON_NAME}",
-                    contents=prompt,
-                    generation_config=types.GenerationConfig(
+                # KORREKTER API-AUFRUF am Modell-Objekt
+                response = model.generate_content(
+                    prompt,
+                    generation_config=GenerationConfig(
                         response_mime_type="application/json"
-                    ),
-                    request_options={"timeout": 100}
+                    )
                 )
-                raw_text = response.text
                 
-                # Kein Regex mehr nötig, da die API valides JSON liefert
-                data = json.loads(raw_text)
+                data = json.loads(response.text)
                 for obj in data:
                     if _id := obj.get("id"):
                         processed_by_id[_id] = {"summary": obj.get("summary", ""), "topics": obj.get("topics", [])}
@@ -219,19 +220,22 @@ def generate_and_save_daily_summary(newly_processed_articles):
         content_for_summary = "\n\n".join([f"Titel: {a['title']}\nZusammenfassung: {a['summary_ai']}" for a in newly_processed_articles])
     
     try:
-        # --- KORRIGIERTER API-AUFRUF ---
-        # Direkter Aufruf mit client.generate_content
-        response = client.generate_content(
-            model=f"models/{MODEL_SUMMARY_NAME}",
-            contents=SUMMARY_PROMPT.format(content_for_summary),
-            request_options={"timeout": 180}
-        )
+        # KORREKTE NUTZUNG: Erstelle ein Modell-Objekt für diese Aufgabe
+        model = genai.GenerativeModel(MODEL_SUMMARY_NAME)
+        
+        # KORREKTER API-AUFRUF am Modell-Objekt
+        response = model.generate_content(SUMMARY_PROMPT.format(content_for_summary))
         save_summary_to_db(response.text.strip())
         print("✅ Tages-Briefing erfolgreich erstellt und in der DB gespeichert.")
     except Exception as e:
         print(f"-> FEHLER bei der Erstellung der Tageszusammenfassung: {e}")
 
 def run_daily_task():
+    # Prüfen, ob die Konfiguration fehlgeschlagen ist
+    if not genai.API_KEY:
+        print("Haupt-Task wird abgebrochen, da die SDK-Konfiguration fehlgeschlagen ist.")
+        return
+        
     processed_links = get_processed_links_from_db()
     new_entries = get_new_entries(processed_links)
     if new_entries:
@@ -247,3 +251,4 @@ def run_daily_task():
 
 if __name__ == "__main__":
     run_daily_task()
+
