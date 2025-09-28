@@ -59,7 +59,8 @@ class NewsArticle {
 // Wähle die richtige Adresse, je nachdem, wo du die App testest:
 // - Für den Android Emulator: 'http://10.0.2.2:8000'
 // - Für Windows/Web/iOS Simulator: 'http://127.0.0.1:8000'
-const String backendUrl = 'http://10.0.2.2:8000';
+//const String backendUrl = 'http://10.0.2.2:8000';
+const String backendUrl = 'https://ki-news-radar-backend.onrender.com';
 
 
 final newsProvider = FutureProvider<List<NewsArticle>>((ref) async {

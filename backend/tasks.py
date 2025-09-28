@@ -1,4 +1,4 @@
-# backend/tasks.py (Final Version)
+# backend/tasks.py (Final, Corrected API Calls)
 
 import os
 import json
@@ -21,13 +21,11 @@ from google.genai import types
 # --- CONFIGURATION ---
 load_dotenv()
 
-client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-)
+# Korrekte Initialisierung des Clients
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Stabile Modell-IDs
-MODEL_JSON = "gemini-1.5-flash-latest" 
-MODEL_SUMMARY = "gemini-1.5-pro-latest"
+MODEL_JSON_NAME = "gemini-1.5-flash-latest"
+MODEL_SUMMARY_NAME = "gemini-1.5-pro-latest"
 
 MAX_ENTRIES_PER_RUN = 40
 ARTICLES_TO_SCRAPE_FOR_BRIEFING = 5
@@ -72,8 +70,6 @@ Artikeltexte:
 ---
 {}
 ---"""
-
-# --- Helper & Core Functions ---
 
 def scrape_article_text(url):
     try:
@@ -166,13 +162,20 @@ def process_with_gemini(entries):
         
         for attempt in range(MAX_RETRIES):
             try:
-                response = client.generate_content(model=f"models/{MODEL_JSON}", contents=prompt)
+                # --- KORRIGIERTER API-AUFRUF ---
+                # Direkter Aufruf mit client.generate_content und Erzwingen von JSON-Output
+                response = client.generate_content(
+                    model=f"models/{MODEL_JSON_NAME}",
+                    contents=prompt,
+                    generation_config=types.GenerationConfig(
+                        response_mime_type="application/json"
+                    ),
+                    request_options={"timeout": 100}
+                )
                 raw_text = response.text
                 
-                json_match = re.search(r"\[.*\]", raw_text, re.DOTALL)
-                if not json_match: raise ValueError("Kein JSON-Array im Modell-Output gefunden")
-                
-                data = json.loads(json_match.group(0))
+                # Kein Regex mehr nötig, da die API valides JSON liefert
+                data = json.loads(raw_text)
                 for obj in data:
                     if _id := obj.get("id"):
                         processed_by_id[_id] = {"summary": obj.get("summary", ""), "topics": obj.get("topics", [])}
@@ -216,7 +219,13 @@ def generate_and_save_daily_summary(newly_processed_articles):
         content_for_summary = "\n\n".join([f"Titel: {a['title']}\nZusammenfassung: {a['summary_ai']}" for a in newly_processed_articles])
     
     try:
-        response = client.generate_content(model=f"models/{MODEL_SUMMARY}", contents=SUMMARY_PROMPT.format(content_for_summary))
+        # --- KORRIGIERTER API-AUFRUF ---
+        # Direkter Aufruf mit client.generate_content
+        response = client.generate_content(
+            model=f"models/{MODEL_SUMMARY_NAME}",
+            contents=SUMMARY_PROMPT.format(content_for_summary),
+            request_options={"timeout": 180}
+        )
         save_summary_to_db(response.text.strip())
         print("✅ Tages-Briefing erfolgreich erstellt und in der DB gespeichert.")
     except Exception as e:
